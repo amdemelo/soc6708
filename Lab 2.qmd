@@ -1,0 +1,131 @@
+---
+title: "Week 1 Lab"
+subtitle: "SOC6708 ADA"
+author: "Alysia De Melo"
+format: pdf
+execute: 
+  warning: false
+---
+
+```{r}
+library(tidyverse)
+library(here)
+library(readxl)
+library(janitor)
+```
+
+## 
+
+```{r}
+d <- read_csv(here("data", "CAN_age_cod.csv"))
+```
+
+```{r}
+dl <- d %>% 
+  filter(year==2016, cause=="Total, all causes of death  [A00-Y89]") %>% 
+  mutate(age = start_age, Mx = rate/100000) %>% 
+  select(age, Mx)
+```
+
+## Exercise 1
+
+Calculate the lifespan disparity for Canada in 2016.
+
+The lifespan disparity for Canada in 2016 was 12.45 years
+
+```{r}
+d_lt <- dl |> 
+  
+     mutate(n = case_when(
+       age==0 ~ 1,
+       age==1 ~ 4,
+       TRUE ~ 5
+     ),
+   
+       ax = case_when(
+       age==0 ~ 0.07 + 1.7*Mx,
+       age==1 ~ 1.5,
+       age==90 ~ 1/Mx,
+       TRUE ~ 2.5
+     ),
+      qx = n * Mx / (1 + (n - ax)* Mx), 
+      px = 1 - qx, 
+      lx = lag(cumprod(px), default = 1), 
+      dx = lx - lead(lx, default = 0), 
+    
+      Lx = n * lead(lx, default = 0) + (ax* dx), 
+    
+      Tx = rev(cumsum(rev(Lx))),
+      ex = Tx / lx
+      ) 
+
+d_lt |> 
+  mutate(prod = dx *ex) |> 
+  summarize(lifespan_disparity = sum(prod))
+```
+
+## Exercise 2
+
+What's the cause-deleted life expectancy at age 10? What's the implied life lost due to suicide?
+
+In 2016 for people who had reached age 10, assuming mortality rates stay the same and if all intentional injuries were deleted, they are expected to live for 73.02 more years. The implied life lost due to suicide is 0.3 years.
+
+```{r}
+dls <- d %>% 
+  filter(year==2016, cause==
+           "Total, all causes of death  [A00-Y89]"|cause==
+           "Intentional self-harm (suicide)  [X60-X84, Y87.0]") %>% 
+  mutate(age = start_age, Mx = rate/100000) %>% 
+  select(age, cause, Mx) %>% 
+  mutate(cause = ifelse(cause==
+      "Intentional self-harm (suicide)  [X60-X84, Y87.0]", 
+      "suicide", "total")) %>% 
+  spread(cause, Mx) %>% 
+  rename(Mx_i = suicide,
+         Mx = total)
+```
+
+```{r}
+dls <- dls |> 
+  mutate(rx_minusi =(Mx-Mx_i)/Mx)
+```
+
+```{r}
+lt_cd <- dls |> 
+     mutate(n = case_when(
+       age==0 ~ 1,
+       age==1 ~ 4,
+       TRUE ~ 5
+     ),
+       ax = case_when(
+       age==0 ~ 0.07 + 1.7*Mx,
+       age==1 ~ 1.5,
+       age==90 ~ 1/Mx,
+       TRUE ~ 2.5
+     ),
+      qx = n * Mx / (1 + (n - ax)* Mx), 
+      qx_minusi = qx * rx_minusi,
+     px = 1 - qx,
+      lx = lag(cumprod(px), default = 1), 
+      dx = lx - lead(lx, default = 0), 
+     Lx = n * lead(lx, default = 0) + (ax* dx), 
+     Tx = rev(cumsum(rev(Lx))),
+      ex = Tx / lx,
+     #cause deleted coloumns
+      px_minusi = 1 - qx_minusi,
+      lx_minusi = lag(cumprod(px_minusi), default = 1), 
+      dx_minusi = lx_minusi - lead(lx_minusi, default = 0), 
+     Lx_minusi = n * lead(lx_minusi, default = 0) + (ax* dx_minusi), 
+     Tx_minusi = rev(cumsum(rev(Lx_minusi))),
+      ex_minusi = Tx_minusi / lx_minusi
+      ) 
+```
+
+```{r}
+lt_cd  |> 
+  select(age, ex, ex_minusi)
+```
+
+```{r}
+73.028201	-72.715225	
+```
